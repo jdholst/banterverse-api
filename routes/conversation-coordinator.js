@@ -15,6 +15,8 @@ const {
 
 const conversationStore = {};
 
+// TODO: Move these openai functions to a separate file
+
 async function chatWithGPT(messages) {
   try {
     const response = await openai.createChatCompletion({
@@ -84,37 +86,34 @@ function createChatbotMessages(chatbot, otherChatbot, conversationHistory = []) 
 
   return prompts;
 }
-const conversationHistory = [];
-let chatbotData = {
-  chatbot1: null,
-  chatbot2: null
-}
 
-router.get('/generate-random-people', async (req, res) => {
-  try {
-    const randomPeople = JSON.parse(await chatWithDavinci(GENERATE_RANDOM_PEOPLE));
-    res.status(200).json({ randomPeople });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error generating random people' });
-  }
-});
-
-router.post('/generate-person-description', async (req, res) => {
-  try {
-    const { name } = req.body;
-    const description = await chatWithDavinci(generatePersonDescription(name));
-    res.status(200).json({ description });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error generating random people' });
-  }
-});
-
-router.post('/start-conversation', async (req, res) => {
+/**
+ * @route POST /conversations/create-new
+ * @description Creates a new chatbot conversation, generates random chatbots (if requested), generates avatars (if requested), and returns a scene description.
+ * 
+ * @param {Object} req.body - Request body with the following structure:
+ *   @param {Object} [settings] - Optional settings for conversation creation.
+ *     @param {boolean} [settings.randomize=false] - If true, generate random chatbots.
+ *     @param {boolean} [settings.enableAvatars=false] - If true, generate avatars for chatbots.
+ *   @param {Object} chatbot1 - The first chatbot (required if randomize is false).
+ *   @param {Object} chatbot2 - The second chatbot (required if randomize is false).
+ *
+ * @returns {Object} res.body - Response body with the following structure:
+ *   @returns {string} conversationId - The unique ID of the created conversation.
+ *   @returns {string} sceneDescription - The description of the scene in which the conversation takes place.
+ *   @returns {Object} chatbot1 - The first chatbot in the conversation.
+ *   @returns {Object} chatbot2 - The second chatbot in the conversation.
+ *
+ * @throws {Error} 400 - If chatbot1 and chatbot2 are not provided and randomize is false.
+ * @throws {Error} 500 - If there's an error generating random people, the scene, or an error occurs while processing the request.
+ */
+router.post('/conversations/create-new', async (req, res) => {
   try {
     let chatbot1, chatbot2;
-    if (req.query['randomize']) {
+    const settings = req.body['settings'] ?? {};
+
+    // If randomize is true in the settings, we'll generate random people for the chatbots
+    if (settings['randomize'] === true) {
       const randomPeople = JSON.parse(await chatWithDavinci(GENERATE_RANDOM_PEOPLE));
       if (!randomPeople) {
         return res.status(500).json({ error: 'Error generating random people' });
@@ -129,11 +128,13 @@ router.post('/start-conversation', async (req, res) => {
       return res.status(400).json({ error: 'chatbot1 and chatbot2 are required' });
     }
 
-    if (req.query['enableAvatars']) {
+    // If enableAvatars is true in the settings, we'll generate avatars for the chatbots
+    if (settings['enableAvatars'] === true) {
       chatbot1.avatarUrl = await generateImage(`A portrait of ${chatbot1.name}: ${chatbot1.description}`);
       chatbot2.avatarUrl = await generateImage(`A portrait of ${chatbot2.name}: ${chatbot2.description}`);
     }
 
+    // store conversation in memory
     const conversationId = uuid();
     conversationStore[conversationId] = {
       chatbot1,
@@ -142,24 +143,14 @@ router.post('/start-conversation', async (req, res) => {
       conversationHistory: [],
     };
 
+    // generate a text description of the scene in which the conversation takes place
     const scene = await chatWithDavinci(sceneDescription(chatbot1, chatbot2));
     if (!scene) {
       return res.status(500).json({ error: 'Error generating the scene' });
     }
 
-    // const sceneImage = await generateImage(scene);
-    // if (!sceneImage) {
-    //   return res.status(500).json({ error: 'Error generating the scene image' });
-    // }
+    // TODO: Add a way to generate a scene image
 
-    // const chatbot1Messages = createChatbotMessages(chatbot1, chatbot2);
-    // const chatbot1Response = await chatWithGPT(chatbot1Messages);
-
-    // if (!chatbot1Response) {
-    //   return res.status(500).json({ error: `Error generating a response from ${chatbot1.name}` });
-    // }
-
-    // conversationHistory.push({ name: chatbot1.name, avatarUrl: chatbot1.avatarUrl, response: chatbot1Response });
     res.status(200).json({ 
       conversationId, 
       sceneDescription: scene, 
@@ -172,23 +163,37 @@ router.post('/start-conversation', async (req, res) => {
   }
 });
 
-router.post('/continue-conversation', async (req, res) => {
+/**
+ * @route POST /conversations/:conversationId/continue
+ * @description Continues a chatbot conversation, prompting the next chatbot to respond, and updates the conversation history.
+ * 
+ * @param {Object} req.params - Request parameters with the following structure:
+ *   @param {string} conversationId - The unique ID of the conversation to continue.
+ *
+ * @returns {Object} res.body - Response body with the following structure:
+ *   @returns {Array} conversationHistory - An array of chatbot message objects, each containing the chatbot's name, avatarUrl, and response.
+ *
+ * @throws {Error} 404 - If the conversation with the given conversationId is not found.
+ * @throws {Error} 500 - If there's an error generating a response from the chatbot or an error occurs while processing the request.
+ */
+router.post('/conversations/:conversationId/continue', async (req, res) => {
   try {
-    const { conversationId } = req.body;
+    const { conversationId } = req.params;
 
     if (!conversationStore[conversationId]) {
-      return res.status(400).json({ error: `Conversation ${conversationId} does not exist.` });
+      return res.status(404).json({ error: `Conversation ${conversationId} not found.` });
     }
 
     const { chatbot1, chatbot2, conversationHistory } = conversationStore[conversationId];
     let chatbotMessages, chatbotToPrompt, otherChatbot;
 
     if (conversationHistory.length === 0) {
-      // return res.status(400).json({ error: 'No conversation is in progress. Please start a conversation before continuing.' });
+      // conversation has not started, so we'll prompt the first chatbot to respond
       chatbotToPrompt = chatbot1;
       otherChatbot = chatbot2;
       chatbotMessages = createChatbotMessages(chatbot1, chatbot2);
     } else {
+      // conversation has started, so we'll prompt the other chatbot with the last response
       const lastResponse = conversationHistory[conversationHistory.length - 1];
 
       chatbotToPrompt = chatbot1.name === lastResponse.name ? chatbot2 : chatbot1;
@@ -214,11 +219,54 @@ router.post('/continue-conversation', async (req, res) => {
   }
 });
 
+/**
+ * @route GET /conversations/:conversationId
+ * @description Retrieves the conversation with the specified conversationId from the conversation store.
+ * 
+ * @param {Object} req.params - Request parameters with the following structure:
+ *   @param {string} conversationId - The unique ID of the conversation to retrieve.
+ *
+ * @returns {Object} res.body - Response body containing the conversation object with the following structure:
+ *   @returns {Object} chatbot1 - The first chatbot in the conversation.
+ *   @returns {Object} chatbot2 - The second chatbot in the conversation.
+ *   @returns {number} timeCreated - The timestamp of when the conversation was created.
+ *   @returns {Array} conversationHistory - An array of chatbot message objects, each containing the chatbot's name, avatarUrl, and response.
+ *
+ * @throws {Error} 404 - If the conversation with the given conversationId is not found.
+ */
 router.get('/conversations/:conversationId', (req, res) => {
+  const conversation = conversationStore[req.params.conversationId];
+  if (!conversation) {
+    return res.status(404).json({ error: `Conversation ${req.params.conversationId} not found.` });
+  }
+
   res.json(conversationStore[req.params.conversationId]);
 });
 
-router.post('/describe-and-generate-image', async (req, res) => {
+// Utility routes (TODO: Possibly move these to a different router)
+
+router.post('/utility/generate-random-people', async (req, res) => {
+  try {
+    const randomPeople = JSON.parse(await chatWithDavinci(GENERATE_RANDOM_PEOPLE));
+    res.status(200).json({ randomPeople });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error generating random people' });
+  }
+});
+
+router.post('/utility/generate-person-description', async (req, res) => {
+  try {
+    const { name } = req.body;
+    const description = await chatWithDavinci(generatePersonDescription(name));
+    res.status(200).json({ description });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error generating random people' });
+  }
+});
+
+router.post('/utility/describe-and-generate-image', async (req, res) => {
     try {
       const initialPrompt = req.body.prompt;
   

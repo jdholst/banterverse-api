@@ -7,7 +7,7 @@ var cors = require('cors');
 
 require('dotenv').config();
 
-var chatbotCoordinatorRouter = require('./routes/chatbot-coordinator');
+var conversationCoordinatorRouter = require('./routes/conversation-coordinator');
 
 var app = express();
 
@@ -34,7 +34,7 @@ app.use((req, res, next) => {
 // CORS middleware (adjust the options as needed for your deployment)
 app.use(cors());
 
-app.use('/chatbot-coordinator/v1', chatbotCoordinatorRouter);
+app.use('/conversation-coordinator/v1', conversationCoordinatorRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
