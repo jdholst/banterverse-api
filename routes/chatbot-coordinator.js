@@ -84,12 +84,6 @@ function createChatbotMessages(chatbot, otherChatbot, conversationHistory = []) 
 
   return prompts;
 }
-
-  console.log(prompts);
-
-  return prompts;
-}
-
 const conversationHistory = [];
 let chatbotData = {
   chatbot1: null,
@@ -119,13 +113,9 @@ router.post('/generate-person-description', async (req, res) => {
 
 router.post('/start-conversation', async (req, res) => {
   try {
-    if (conversationHistory.length > 0) {
-      conversationHistory.length = 0;
-    }
-
     let chatbot1, chatbot2;
     if (req.query['randomize']) {
-      const randomPeople = await chatWithDavinci(GENERATE_RANDOM_PEOPLE);
+      const randomPeople = JSON.parse(await chatWithDavinci(GENERATE_RANDOM_PEOPLE));
       if (!randomPeople) {
         return res.status(500).json({ error: 'Error generating random people' });
       }
@@ -195,16 +185,16 @@ router.post('/continue-conversation', async (req, res) => {
 
     if (conversationHistory.length === 0) {
       // return res.status(400).json({ error: 'No conversation is in progress. Please start a conversation before continuing.' });
-      chatbotToPrompt = chatbotData.chatbot1;
-      otherChatbot = chatbotData.chatbot2;
-      chatbotMessages = createChatbotMessages(chatbotData.chatbot1, chatbotData.chatbot2);
+      chatbotToPrompt = chatbot1;
+      otherChatbot = chatbot2;
+      chatbotMessages = createChatbotMessages(chatbot1, chatbot2);
     } else {
       const lastResponse = conversationHistory[conversationHistory.length - 1];
 
-      chatbotToPrompt = chatbotData.chatbot1.name === lastResponse.name ? chatbotData.chatbot2 : chatbotData.chatbot1;
-      otherChatbot = chatbotData.chatbot1.name === lastResponse.name ? chatbotData.chatbot1 : chatbotData.chatbot2;
+      chatbotToPrompt = chatbot1.name === lastResponse.name ? chatbot2 : chatbot1;
+      otherChatbot = chatbot1.name === lastResponse.name ? chatbot1 : chatbot2;
 
-      chatbotMessages = createChatbotMessages(chatbotToPrompt, otherChatbot, lastResponse.response, conversationHistory);
+      chatbotMessages = createChatbotMessages(chatbotToPrompt, otherChatbot, conversationHistory);
     }
     
     // Prompt the other chatbot to respond
