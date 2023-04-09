@@ -1,10 +1,19 @@
 var express = require('express');
 var router = express.Router();
+
 const { OpenAIApi, Configuration } = require('openai');
 const openai = new OpenAIApi(new Configuration( { apiKey: process.env.OPENAI_API_KEY } ));
-const { connect } = require('../mongo/db');
 
-const { GENERATE_RANDOM_PEOPLE, coordinateConversation, GENERATE_SCENE, sceneDescription, generatePersonDescription } = require('../utils/prompt-utils');
+const { v4: uuid } = require('uuid');
+const {
+  GENERATE_RANDOM_PEOPLE,
+  coordinateConversation,
+  GENERATE_SCENE,
+  sceneDescription,
+  generatePersonDescription
+} = require('../utils/prompt-utils');
+
+const conversationStore = {};
 
 async function chatWithGPT(messages) {
   try {
@@ -18,7 +27,6 @@ async function chatWithGPT(messages) {
       presence_penalty: 0.8,
     });
 
-    
     return response.data.choices[0].message.content;
   } catch (error) {
     console.error(error);
@@ -38,8 +46,6 @@ async function chatWithDavinci(prompt) {
       presence_penalty: 0,
     });
 
-    console.log(response);
-    
     return response.data.choices[0].text;
   } catch (error) {
     console.error(error);
@@ -63,11 +69,7 @@ async function generateImage(prompt, size = "256x256") {
   }
 }
 
-function createChatbotMessages(
-  chatbot, otherChatbot,
-  otherChatbotResponse,
-  conversationHistory = []
-) {
+function createChatbotMessages(chatbot, otherChatbot, conversationHistory = []) {
   const prompts = [
     {
       role: 'system',
@@ -80,12 +82,8 @@ function createChatbotMessages(
     }))
   );
 
-  // if (otherChatbotResponse) {
-  //   prompts.push({
-  //     role: 'user',
-  //     content: otherChatbotResponse,
-  //   });
-  // }
+  return prompts;
+}
 
   console.log(prompts);
 
@@ -137,13 +135,22 @@ router.post('/start-conversation', async (req, res) => {
       ({ chatbot1, chatbot2 } = req.body);
     }
 
+    if (!chatbot1 || !chatbot2) {
+      return res.status(400).json({ error: 'chatbot1 and chatbot2 are required' });
+    }
+
     if (req.query['enableAvatars']) {
       chatbot1.avatarUrl = await generateImage(`A portrait of ${chatbot1.name}: ${chatbot1.description}`);
       chatbot2.avatarUrl = await generateImage(`A portrait of ${chatbot2.name}: ${chatbot2.description}`);
     }
 
-    chatbotData.chatbot1 = chatbot1;
-    chatbotData.chatbot2 = chatbot2;
+    const conversationId = uuid();
+    conversationStore[conversationId] = {
+      chatbot1,
+      chatbot2,
+      timeCreated: Date.now(),
+      conversationHistory: [],
+    };
 
     const scene = await chatWithDavinci(sceneDescription(chatbot1, chatbot2));
     if (!scene) {
@@ -163,7 +170,12 @@ router.post('/start-conversation', async (req, res) => {
     // }
 
     // conversationHistory.push({ name: chatbot1.name, avatarUrl: chatbot1.avatarUrl, response: chatbot1Response });
-    res.status(200).json({ sceneDescription: scene, chatbot1, chatbot2 });
+    res.status(200).json({ 
+      conversationId, 
+      sceneDescription: scene, 
+      chatbot1, 
+      chatbot2 
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'An error occurred while processing your request' });
@@ -172,11 +184,15 @@ router.post('/start-conversation', async (req, res) => {
 
 router.post('/continue-conversation', async (req, res) => {
   try {
-    if (!chatbotData.chatbot1 || !chatbotData.chatbot2) {
-      return res.status(400).json({ error: 'No conversation is in progress. Please start a conversation before continuing.' });
+    const { conversationId } = req.body;
+
+    if (!conversationStore[conversationId]) {
+      return res.status(400).json({ error: `Conversation ${conversationId} does not exist.` });
     }
 
+    const { chatbot1, chatbot2, conversationHistory } = conversationStore[conversationId];
     let chatbotMessages, chatbotToPrompt, otherChatbot;
+
     if (conversationHistory.length === 0) {
       // return res.status(400).json({ error: 'No conversation is in progress. Please start a conversation before continuing.' });
       chatbotToPrompt = chatbotData.chatbot1;
@@ -202,41 +218,14 @@ router.post('/continue-conversation', async (req, res) => {
     conversationHistory.push({ name: chatbotToPrompt.name, avatarUrl: chatbotToPrompt.avatarUrl, response: chatbotResponse });
 
     res.status(200).json({ conversationHistory });
-
-    // const dbClient = await connect();
-    // const conversationCollection = dbClient.db('<dbname>').collection('conversations');
-
-    // let ongoingConversation;
-    // if (conversationHistory.length === 1) {
-    //   // Create a new conversation in the database
-    //   ongoingConversation = new Conversation({
-    //     chatbot1: chatbotData.chatbot1,
-    //     chatbot2: chatbotData.chatbot2,
-    //     conversationHistory,
-    //   });
-
-    //   const result = await conversationCollection.insertOne(ongoingConversation);
-    //   ongoingConversation._id = result.insertedId;
-    // } else {
-    //   // Update the existing conversation in the database
-    //   const conversationId = conversationHistory[0]._id;
-    //   await conversationCollection.updateOne(
-    //     { _id: conversationId },
-    //     { $push: { conversationHistory: { $each: [conversationHistory.slice(-1)[0]] } } }
-    //   );
-
-    //   ongoingConversation = await conversationCollection.findOne({ _id: conversationId });
-    // }
-
-    // res.status(200).json({ conversationHistory: ongoingConversation.conversationHistory });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'An error occurred while processing your request' });
   }
 });
 
-router.get('/get-conversation', (req, res) => {
-  res.json(conversationHistory);
+router.get('/conversations/:conversationId', (req, res) => {
+  res.json(conversationStore[req.params.conversationId]);
 });
 
 router.post('/describe-and-generate-image', async (req, res) => {
