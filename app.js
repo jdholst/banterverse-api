@@ -9,6 +9,13 @@ require('dotenv').config();
 
 var conversationCoordinatorRouter = require('./routes/conversation-coordinator');
 
+var rateLimiter = require('./middleware/rate-limiter');
+var rateLimiterConfig = {
+  '/conversation-coordinator/v1/conversations/create-new': 5,
+  '/conversation-coordinator/v1/conversations/[0-9a-fA-F\-]+/continue': 12,
+  '/conversation-coordinator/v1/.*': 25 // Default rate limit for all other conversation-coordinator URLs
+};
+
 var app = express();
 
 app.use(logger('dev'));
@@ -16,6 +23,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Rate limiter middleware
+app.use(rateLimiter(rateLimiterConfig));
 
 // Custom logging middleware
 app.use((req, res, next) => {
