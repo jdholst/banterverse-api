@@ -56,6 +56,11 @@ async function chatWithDavinci(prompt) {
 }
 
 async function generateImage(prompt, size = "256x256") {
+
+  if (!process.env.ENABLE_IMAGE_GENERATION) {
+    return null;
+  }
+
   try {
     const response = await openai.createImage({
       model: 'image-alpha-001', // Replace with the desired image model
