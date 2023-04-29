@@ -1,29 +1,38 @@
-# .gitignore
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Node.js related
-node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
-yarn.lock
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
 
-# Environment files
-.env
-.env.local
-.env.development.local
-.env.production.local
+# testing
+/coverage
 
-# IDE / Editor files
-.vscode/
-.idea/
+# next.js
+/.next/
+/out/
 
-# macOS related
+# production
+/build
+
+# misc
 .DS_Store
-.AppleDouble
-.LSOverride
+*.pem
 
-# Windows related
-Thumbs.db
-ehthumbs.db
-Desktop.ini
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+
+# vercel
 .vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+.vercel
+.next
