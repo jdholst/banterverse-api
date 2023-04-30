@@ -1,7 +1,8 @@
 import { v4 as uuid } from 'uuid';
-import { chatWithDavinci, generateImage } from '../../../../../utils/openai-utils';
-import { sceneDescriptionPrompt } from '../../../../../utils/prompt-utils';
-import { connectToDatabase, Conversation } from '../../../../../mongo';
+import { chatWithDavinci, generateImage } from '@/utils/openai-utils';
+import { sceneDescriptionPrompt, PROMPT_GENERATE_RANDOM_PEOPLE } from '@/utils/prompt-utils';
+import { createConversation } from '@/utils/db-helpers/conversations';
+import { withRateLimit } from '@/middleware';
 
 /**
  * @route POST api/conversation-coordinator/v1/conversations/create-new
@@ -24,7 +25,7 @@ import { connectToDatabase, Conversation } from '../../../../../mongo';
  * @throws {Error} 500 - If there's an error generating random people, the scene, or an error occurs while processing the request.
  * @throws {Error} 405 - If the request method is not POST.
  */
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
     res.status(405).end(`Method ${req.method} Not Allowed`);
@@ -37,7 +38,7 @@ export default async function handler(req, res) {
 
     // If randomize is true in the settings, we'll generate random people for the chatbots
     if (settings['randomize'] === true) {
-      const randomPeople = JSON.parse(await chatWithDavinci(GENERATE_RANDOM_PEOPLE));
+      const randomPeople = JSON.parse(await chatWithDavinci(PROMPT_GENERATE_RANDOM_PEOPLE));
       if (!randomPeople) {
         return res.status(500).json({ error: 'Error generating random people' });
       }
@@ -51,28 +52,34 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'chatbot1 and chatbot2 are required' });
     }
 
-    // If enableAvatars is true in the settings, we'll generate avatars for the chatbots
-    if (settings['enableAvatars'] === true) {
-      chatbot1.avatarUrl = await generateImage(`A portrait of ${chatbot1.name}: ${chatbot1.description}`);
-      chatbot2.avatarUrl = await generateImage(`A portrait of ${chatbot2.name}: ${chatbot2.description}`);
-    }
-
-    // store conversation in MongoDB
-    await connectToDatabase();
-    const conversationId = uuid();
-    const newConversation = new Conversation({
-      conversationId,
-      chatbot1,
-      chatbot2,
-      conversationHistory: [],
-    });
-    await newConversation.save();
+    // create an array of open ai generation promises which can be later ran in parellel for better performance
+    const generationPromises = [];
 
     // generate a text description of the scene in which the conversation takes place
-    const sceneDescription = await chatWithDavinci(sceneDescriptionPrompt(chatbot1, chatbot2));
+    generationPromises.push(chatWithDavinci(sceneDescriptionPrompt(chatbot1, chatbot2)));
+
+    // If enableAvatars is true in the settings, we'll generate avatars for the chatbots
+    if (settings['enableAvatars'] === true) {
+      generationPromises.push(
+        generateImage(`A portrait of ${chatbot1.name}: ${chatbot1.description}`),
+        generateImage(`A portrait of ${chatbot2.name}: ${chatbot2.description}`),
+      );
+    }
+
+    // run open-ai generations in parallel
+    const [ sceneDescription, avatar1, avatar2 ] = await Promise.all(generationPromises);
+
     if (!sceneDescription) {
       return res.status(500).json({ error: 'Error generating the scene' });
     }
+
+    chatbot1.avatarUrl = avatar1;
+    chatbot2.avatarUrl = avatar2;
+
+    const conversationId = uuid();
+
+    // store conversation
+    await createConversation(conversationId, chatbot1, chatbot2);
 
     // TODO: Add a way to generate a scene image
 
@@ -87,3 +94,5 @@ export default async function handler(req, res) {
     res.status(500).json({ error: 'An error occurred while processing your request' });
   }
 }
+
+export default withRateLimit(handler, 5);

@@ -1,5 +1,8 @@
-import { chatWithDavinci } from '../../../../../utils/openai-utils';
-import { generatePersonDescriptionPrompt } from '../../../../../utils/prompt-utils';
+import { withRateLimit } from '@/middleware';
+import { chatWithDavinci } from '@/utils/openai-utils';
+import { generatePersonDescriptionPrompt } from '@/utils/prompt-utils';
+import { connectToClient } from '@/redis';
+
 /**
  * @route POST api/conversation-coordinator/v1/utility/generate-person-description
  * @description Generates a description for the person with the given name using the Davinci chatbot.
@@ -14,7 +17,7 @@ import { generatePersonDescriptionPrompt } from '../../../../../utils/prompt-uti
  *
  * @throws {Error} 500 - An error occurred while generating the person's description.
  */
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
@@ -22,10 +25,20 @@ export default async function handler(req, res) {
 
   try {
     const { name } = req.body;
-    const description = await chatWithDavinci(generatePersonDescriptionPrompt(name));
+
+    const redisClient = await connectToClient();
+
+    let description = await redisClient.get(name);
+    if (!description) {
+      description = await chatWithDavinci(generatePersonDescriptionPrompt(name));
+      await redisClient.set(name, description);
+    }
+
     res.status(200).json({ description });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error generating person description' });
   }
 }
+
+export default withRateLimit(handler);

@@ -1,6 +1,16 @@
 import { OpenAIApi, Configuration } from 'openai';
+import { connectToClient } from '@/redis';
+import crypto from 'crypto';
 
 const openai = new OpenAIApi(new Configuration( { apiKey: process.env.OPENAI_API_KEY } ));
+
+function hashPromptKey(prompt) {
+  const hash = crypto.createHash('sha256');
+  hash.update(prompt);
+  const hashValue = hash.digest('hex');
+  const key = `chatgpt:response:${hashValue}`;
+  return key;
+}
 
 export async function chatWithGPT(messages) {
   try {
@@ -47,14 +57,29 @@ export async function generateImage(prompt, size = "256x256") {
   }
 
   try {
-    const response = await openai.createImage({
-      model: 'image-alpha-001', // Replace with the desired image model
-      prompt: prompt,
-      n: 1,
-      size,
-    });
+    const redisClient = await connectToClient();
+    const key = hashPromptKey(prompt);
 
-    return response.data.data[0].url;
+    // Check if the prompt has been cached
+    let image = await redisClient.get(key);
+    if (!image) {
+      const response = await openai.createImage({
+        model: 'image-alpha-001', // Replace with the desired image model
+        prompt: prompt,
+        n: 1,
+        size,
+      });
+  
+      image = response.data.data[0].url;
+
+      // Cache the image
+      // TODO: DALLE image URLs are not stable. We should download the image from the provided URL and cache that.
+      await redisClient.set(key, image);
+    }
+
+    return image;
+
+    
   } catch (error) {
     console.error(error);
     return null;

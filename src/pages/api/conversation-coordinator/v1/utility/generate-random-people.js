@@ -1,5 +1,6 @@
-import { chatWithDavinci } from '../../../../../utils/openai-utils';
-import { PROMPT_GENERATE_RANDOM_PEOPLE } from '../../../../../utils/prompt-utils';
+import { withRateLimit } from '@/middleware';
+import { chatWithDavinci } from '@/utils/openai-utils';
+import { PROMPT_GENERATE_RANDOM_PEOPLE } from '@/utils/prompt-utils';
 
 /**
  * @route POST api/conversation-coordinator/v1/utility/generate-random-people
@@ -12,7 +13,7 @@ import { PROMPT_GENERATE_RANDOM_PEOPLE } from '../../../../../utils/prompt-utils
  *
  * @throws {Error} 500 - An error occurred while generating random people.
  */
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
     return;
@@ -26,3 +27,5 @@ export default async function handler(req, res) {
     res.status(500).json({ error: 'Error generating random people' });
   }
 }
+
+export default withRateLimit(handler);
