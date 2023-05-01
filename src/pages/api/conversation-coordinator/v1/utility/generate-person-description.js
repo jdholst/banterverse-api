@@ -1,7 +1,9 @@
 import { withRateLimit } from '@/middleware';
 import { chatWithDavinci } from '@/utils/openai-utils';
 import { generatePersonDescriptionPrompt } from '@/utils/prompt-utils';
-import { connectToClient } from '@/redis';
+import { Redis } from '@upstash/redis';
+
+const redis = Redis.fromEnv();
 
 /**
  * @route POST api/conversation-coordinator/v1/utility/generate-person-description
@@ -26,12 +28,10 @@ async function handler(req, res) {
   try {
     const { name } = req.body;
 
-    const redisClient = await connectToClient();
-
-    let description = await redisClient.get(name);
+    let description = await redis.get(name);
     if (!description) {
       description = await chatWithDavinci(generatePersonDescriptionPrompt(name));
-      await redisClient.set(name, description);
+      await redis.set(name, description);
     }
 
     res.status(200).json({ description });

@@ -1,4 +1,6 @@
-import { connectToClient } from '../redis';
+import { Redis } from '@upstash/redis';
+
+const redis = Redis.fromEnv();
 
 export const withRateLimit = (handler, limit = 25) => {
   return async (req, res) => {
@@ -6,14 +8,13 @@ export const withRateLimit = (handler, limit = 25) => {
     const key = `${req.url}:${currentDate}`;
   
     try {
-      const redisClient = await connectToClient();
 
       // Increment the request count using Redis
-      const requestCount = await redisClient.incr(key);
+      const requestCount = await redis.incr(key);
 
       // Set the expiration time for the key if it's the first request of the day
       if (requestCount === 1) {
-        await redisClient.expire(key, process.env.RATE_LIMIT_PERIOD ?? 86400);
+        await redis.expire(key, process.env.RATE_LIMIT_PERIOD ?? 86400);
       }
 
       console.log(`Request count: ${requestCount} for ${key}`);

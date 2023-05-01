@@ -1,8 +1,9 @@
 import { OpenAIApi, Configuration } from 'openai';
-import { connectToClient } from '@/redis';
 import crypto from 'crypto';
+import { Redis } from '@upstash/redis';
 
 const openai = new OpenAIApi(new Configuration( { apiKey: process.env.OPENAI_API_KEY } ));
+const redis = Redis.fromEnv();
 
 function hashPromptKey(prompt) {
   const hash = crypto.createHash('sha256');
@@ -57,11 +58,10 @@ export async function generateImage(prompt, size = "256x256") {
   }
 
   try {
-    const redisClient = await connectToClient();
     const key = hashPromptKey(prompt);
 
     // Check if the prompt has been cached
-    let image = await redisClient.get(key);
+    let image = await redis.get(key);
     if (!image) {
       const response = await openai.createImage({
         model: 'image-alpha-001', // Replace with the desired image model
@@ -74,7 +74,7 @@ export async function generateImage(prompt, size = "256x256") {
 
       // Cache the image
       // TODO: DALLE image URLs are not stable. We should download the image from the provided URL and cache that.
-      await redisClient.set(key, image);
+      await redis.set(key, image);
     }
 
     return image;

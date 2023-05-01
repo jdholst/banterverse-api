@@ -1,8 +1,9 @@
 import { connectToDatabase, Conversation } from '@/mongo';
-import { connectToClient } from '@/redis';
+import { Redis } from '@upstash/redis';
 import logger from '@/logger';
 
 const CONVERSATION_EXPIRATION = 1800; // 30 minutes
+const redis = Redis.fromEnv();
 
 function logCacheHit(prefix, key) {
   logger.info(`${prefix}: Cache hit for ${key}!`);
@@ -22,17 +23,14 @@ export async function createConversation(conversationId, chatbot1, chatbot2) {
   }, null, { timestamps: true } );
   await conversation.save();
 
-  const redisClient = await connectToClient();
-  await redisClient.set(conversationId, JSON.stringify(conversation), { EX: CONVERSATION_EXPIRATION });
+  await redis.set(conversationId, conversation, { EX: CONVERSATION_EXPIRATION });
 }
 
 export async function getConversation(conversationId) {
-  const redisClient = await connectToClient();
-
-  let conversation = await redisClient.get(conversationId,);
+  let conversation = await redis.get(conversationId);
   if (conversation) {
     logCacheHit('getConversation', conversationId);
-    return JSON.parse(conversation);
+    return conversation;
   }
 
   logCacheMiss('getConversation', conversationId);
@@ -40,14 +38,14 @@ export async function getConversation(conversationId) {
   logger.info('Fetching conversation from database...');
   await connectToDatabase();
   conversation = await Conversation.findOne({ conversationId });
-  await redisClient.set(conversationId, JSON.stringify(conversation), { EX: CONVERSATION_EXPIRATION });
+  await redis.set(conversationId, conversation, { EX: CONVERSATION_EXPIRATION });
 
   return conversation;
 }
 
 export async function deleteConversation(conversationId) {
-  const redisClient = await connectToClient();
-  await redisClient.del(conversationId);
+
+  await redis.del(conversationId);
 
   await connectToDatabase();
   await Conversation.deleteOne({ conversationId });
@@ -63,8 +61,8 @@ export async function pushConversationHistory(conversationId, message) {
   );
 
   logger.info('Updating conversation history in cache...');
-  const redisClient = await connectToClient();
-  await redisClient.set(conversationId, JSON.stringify(updatedConversation), { EX: CONVERSATION_EXPIRATION });
+
+  await redis.set(conversationId, updatedConversation, { EX: CONVERSATION_EXPIRATION });
 
   return updatedConversation;
 }
