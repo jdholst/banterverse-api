@@ -1,40 +1,25 @@
 {
   "name": "banterverse-api",
-  "version": "1.0.0",
-  "description": "A robust and scalable Express API designed to handle chatbot training, management, and interactions for the Banterverse platform.",
-  "main": "app.js",
+  "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "start": "node app.js",
-    "dev": "nodemon app.js"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yourusername/chatbot-coordinator-api.git"
-  },
-  "keywords": [
-    "chatbot",
-    "coordinator",
-    "API",
-    "express",
-    "AI",
-    "generative"
-  ],
-  "author": "Jacob Holst",
-  "license": "MIT",
   "dependencies": {
-    "cookie-parser": "^1.4.5",
-    "cors": "^2.8.5",
-    "dotenv": "^10.0.0",
-    "express": "^4.17.1",
-    "http-errors": "^1.8.0",
-    "mongodb": "^5.1.0",
-    "mongoose": "^7.0.3",
-    "morgan": "^1.10.0",
+    "@upstash/redis": "^1.20.4",
+    "eslint": "8.39.0",
+    "eslint-config-next": "13.3.1",
+    "mongodb": "5.3.0",
+    "mongoose": "7.0.5",
+    "next": "13.3.1",
     "openai": "3.2.1",
-    "path": "^0.12.7",
+    "pino": "^8.11.0",
+    "pino-logflare": "^0.3.12",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
     "uuid": "^9.0.0"
-  },
-  "devDependencies": {
-    "nodemon": "^2.0.15"
   }
 }
